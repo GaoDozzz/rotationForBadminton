@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: zzjl-postgres
+    restart: "no"
+    env_file:
+      - ./infrastructure/.env.local
+    environment:
+      POSTGRES_DB: zzjl
+      POSTGRES_USER: zzjl_bootstrap
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD}
+    ports:
+      # Windows/WSL on this host reserves 5409-5508, which includes 5432.
+      # Keep the container port standard and expose a stable free host port.
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - E:/Develop/Infrastructure/PostgreSQLData:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zzjl_bootstrap -d zzjl"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: zzjl-redis
+    restart: "no"
+    env_file:
+      - ./infrastructure/.env.local
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - E:/Develop/Infrastructure/RedisData:/data
+      - ./infrastructure/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./infrastructure/redis/users.acl:/usr/local/etc/redis/users.acl:ro
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user zzjl_app --pass \"$$ZZJL_REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+

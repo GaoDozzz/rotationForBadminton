@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+infrastructure/.env.local
+infrastructure/redis/users.acl
+infrastructure/*_LOCAL_CONNECTIONS.txt
+server/src/generated/
+*.log
+
+# WeChat Developer Tools local identity and preferences
+project.config.json
+project.private.config.json
+**/project.config.json
+**/project.private.config.json
+!**/project.config.json.example
+!**/project.private.config.json.example
+
+# Third-party reference material is kept locally only
+其他小程序参考截图/

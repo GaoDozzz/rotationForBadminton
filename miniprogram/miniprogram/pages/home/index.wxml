@@ -1,0 +1,29 @@
+<view class="page home" bindtap="closeActions">
+  <view class="hero"><view class="brand-mark">转</view><view class="hero-copy"><view class="title">转转接龙</view><view class="subtitle">报名、轮转、计分，一场球清清楚楚</view></view></view>
+  <button class="primary-button create-button" bindtap="createEvent">发起球局</button>
+  <view wx:if="{{drafts.length >= 3}}" class="limit-banner">草稿 {{drafts.length}}/3：不能再保存新草稿，请删除或编辑已有草稿；仍可直接发起球局。</view>
+  <scroll-view scroll-x class="filters"><view class="filter-row">
+    <view class="filter {{activeCategory === 'ALL' ? 'active' : ''}}" data-category="ALL" catchtap="selectCategory">全部 {{events.length + drafts.length}}</view>
+    <view class="filter {{activeCategory === 'IN_PROGRESS' ? 'active' : ''}}" data-category="IN_PROGRESS" catchtap="selectCategory">进行中 {{inProgressEvents.length}}</view>
+    <view class="filter {{activeCategory === 'REGISTRATION_OPEN' ? 'active' : ''}}" data-category="REGISTRATION_OPEN" catchtap="selectCategory">报名中 {{registrationEvents.length}}</view>
+    <view class="filter {{activeCategory === 'DRAFT' ? 'active' : ''}}" data-category="DRAFT" catchtap="selectCategory">草稿 {{drafts.length}}/3</view>
+    <view class="filter {{activeCategory === 'FINISHED' ? 'active' : ''}}" data-category="FINISHED" catchtap="selectCategory">已结束 {{finishedEvents.length}}</view>
+  </view></scroll-view>
+
+  <view wx:if="{{(activeCategory === 'ALL' || activeCategory === 'IN_PROGRESS') && inProgressEvents.length}}" class="section"><view class="section-title">进行中的球局</view>
+    <view wx:for="{{inProgressEvents}}" wx:key="id" class="swipe-row"><view class="row-actions single"><view class="delete-action" data-id="{{item.id}}" catchtap="removeEvent">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'event-' + item.id ? 'opened single' : ''}}" data-key="event-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onEventLongPress" bindtap="openEvent"><view class="card-top"><text class="status progress">进行中</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item._count.participants || item.capacity}} 人 · {{item.rounds}} 轮</view></view></view>
+  </view>
+  <view wx:if="{{(activeCategory === 'ALL' || activeCategory === 'REGISTRATION_OPEN') && registrationEvents.length}}" class="section"><view class="section-title">报名中的球局</view>
+    <view wx:for="{{registrationEvents}}" wx:key="id" class="swipe-row"><view class="row-actions single"><view class="delete-action" data-id="{{item.id}}" catchtap="removeEvent">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'event-' + item.id ? 'opened single' : ''}}" data-key="event-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onEventLongPress" bindtap="openEvent"><view class="card-top"><text class="status registration">报名中</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item._count.participants || 0}}/{{item.capacity}} 人 · {{item.rounds}} 轮</view></view></view>
+  </view>
+  <view wx:if="{{(activeCategory === 'ALL' || activeCategory === 'DRAFT') && drafts.length}}" class="section"><view class="section-title">草稿</view>
+    <view wx:for="{{drafts}}" wx:key="id" class="swipe-row"><view class="row-actions"><view class="edit-action" data-id="{{item.id}}" catchtap="editDraft">编辑</view><view class="delete-action" data-id="{{item.id}}" catchtap="removeDraft">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'draft-' + item.id ? 'opened' : ''}}" data-key="draft-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onDraftLongPress" bindtap="openDraft"><view class="card-top"><text class="status draft">草稿</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item.registrationMode === 'ORGANIZER_MANAGED' ? '组织者录入' : '微信报名'}} · {{item.rounds}} 轮</view></view></view>
+  </view>
+  <view wx:if="{{(activeCategory === 'ALL' || activeCategory === 'FINISHED') && finishedEvents.length}}" class="section"><view class="section-title">已结束的球局</view>
+    <view wx:for="{{finishedEvents}}" wx:key="id" class="swipe-row"><view class="row-actions single"><view class="delete-action" data-id="{{item.id}}" catchtap="removeEvent">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'event-' + item.id ? 'opened single' : ''}}" data-key="event-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onEventLongPress" bindtap="openEvent"><view class="card-top"><text class="status finished">已结束</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item._count.matches || 0}} 场</view></view></view>
+  </view>
+  <view wx:if="{{!loading && events.length === 0 && drafts.length === 0}}" class="card empty-card"><view class="empty-title">还没有球局</view><view class="empty-description">创建一场单打、双打或混双自由转，邀请球友加入。</view></view>
+  <view class="server-status {{serverStatus}}">服务状态：{{serverStatus === 'online' ? '已连接' : serverStatus === 'checking' ? '检查中' : '未连接，请启动本地后台和数据库'}}</view>
+</view>
+
+

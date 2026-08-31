@@ -1,0 +1,5 @@
+.notice{margin-bottom:24rpx;padding:24rpx 26rpx;border-radius:20rpx;color:#7a5410;background:#fff6dc;border:2rpx solid #f4df9d}.notice-title{font-size:28rpx;font-weight:700}.notice-text{margin-top:8rpx;font-size:23rpx;line-height:1.65}.participant{display:flex;align-items:center;justify-content:space-between;gap:20rpx}.participant+.participant{margin-top:18rpx}.participant-copy{min-width:0;flex:1}.name{font-size:30rpx;font-weight:600}.number{display:inline-flex;margin-right:16rpx;color:#16a66a}.meta{margin-top:8rpx;color:#667085;font-size:24rpx}.exit-button{flex:none;margin:0;padding:0 20rpx;color:#b42318;background:#fff0f0;white-space:nowrap}
+
+
+.participant.withdrawn{color:#98a2b3;background:#f5f6f7}.participant.withdrawn .number,.participant.withdrawn .meta{color:#a8afb8}.exited-badge{flex:none;padding:8rpx 14rpx;border-radius:18rpx;color:#667085;background:#e4e7ec;font-size:20rpx}
+

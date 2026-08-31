@@ -1,0 +1,22 @@
+{
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "libVersion": "3.17.0",
+  "miniprogramRoot": "miniprogram/",
+  "projectname": "转转接龙",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": false,
+    "useCompilerPlugins": ["typescript"],
+    "compileWorklet": false,
+    "uploadWithSourceMap": true,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true
+  },
+  "packOptions": { "ignore": [], "include": [] }
+}

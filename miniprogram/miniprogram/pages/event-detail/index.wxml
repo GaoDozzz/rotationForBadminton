@@ -1,0 +1,76 @@
+<view class="page" wx:if="{{event}}">
+  <view class="hero-card">
+    <view class="hero-top"><text class="status">{{statusLabel}}</text><text class="meta">{{formatLabel}} · {{registrationLabel}}</text></view>
+    <view class="title">{{event.title}}</view>
+    <view class="stats"><view><view class="value">{{event.capacity || participants.length}}</view><view class="unit">参赛人数</view></view><view><view class="value">{{event.courtCount}}</view><view class="unit">场地</view></view><view><view class="value">{{event.rounds}}</view><view class="unit">轮次</view></view><view><view class="value">{{event.scoreTo}}</view><view class="unit">分制</view></view></view>
+  </view>
+  <view class="tabs"><view class="tab {{activeTab === 'INFO' ? 'active' : ''}}" data-tab="INFO" bindtap="selectTab">比赛信息</view><view class="tab {{activeTab === 'MATCHES' ? 'active' : ''}}" data-tab="MATCHES" bindtap="selectTab">对阵</view><view class="tab {{activeTab === 'RANKING' ? 'active' : ''}}" data-tab="RANKING" bindtap="selectTab">排名</view></view>
+
+  <view wx:if="{{activeTab === 'INFO'}}">
+    <view wx:if="{{event.description}}" class="card description-card"><view class="section-title">比赛说明</view><view class="description-text">{{event.description}}</view></view>
+    <view wx:if="{{event.registrationMode === 'WECHAT_SELF_SERVICE' && event.status === 'REGISTRATION_OPEN'}}" class="actions"><button class="primary-button" open-type="share">分享报名</button><button class="secondary-button" loading="{{submitting}}" disabled="{{submitting}}" bindtap="beginEvent">生成对阵并开始</button></view>
+    <button wx:if="{{event.status === 'IN_PROGRESS'}}" class="manage-button" bindtap="openParticipantManage"><view class="manage-icon">调</view><view class="manage-copy"><view class="manage-title">人员调整</view><view class="manage-subtitle">临时退出后智能重排剩余场次 · 总轮数不变</view></view><view class="manage-arrow">›</view></button>
+    <view wx:if="{{participants.length}}" class="card roster"><view class="section-head"><view class="section-title">参赛名单</view><view class="section-note">积分随已结束比分实时更新</view></view><view wx:for="{{participants}}" wx:key="id" class="participant {{item.status === 'WITHDRAWN' ? 'withdrawn' : ''}}"><text class="number">{{item.participantNumber}}</text><view class="participant-main"><view class="participant-name-line">{{item.nickname}} · {{item.gender === 'MALE' ? '男' : '女'}}<text wx:if="{{item.status === 'WITHDRAWN'}}" class="withdrawn-badge">已退出</text></view><view class="level">{{item.level || '未填写水平'}} · 已打 {{item.matchesPlayed}} 场</view></view><text class="points {{item.points > 0 ? 'positive' : item.points < 0 ? 'negative' : ''}}">{{item.points > 0 ? '+' : ''}}{{item.points}}</text></view></view>
+    <button class="danger-button" bindtap="deleteCurrentEvent">删除球局</button>
+  </view>
+
+  <view wx:elif="{{activeTab === 'MATCHES'}}" class="matches-tab">
+    <view wx:if="{{roundGroups.length === 0}}" class="card empty">当前筛选下没有对阵</view>
+    <view wx:for="{{roundGroups}}" wx:key="roundNumber" class="preview-round">
+      <view class="preview-round-title"><text>第 {{item.roundNumber}} 轮</text><text>{{item.completedCount}} / {{item.matches.length}} 完成</text></view>
+      <view wx:for="{{item.matches}}" wx:for-item="match" wx:key="id" class="preview-match" data-id="{{match.id}}" bindtap="openMatchEditor">
+        <view class="match-meta"><text>{{match.courtNumber}} 号场</text><text class="preview-status {{match.statusTone}}">{{match.statusLabel}}</text></view>
+        <view class="match-main"><view class="preview-team">{{match.teamAName}}</view><view class="preview-score"><text class="{{match.winner === 'A' ? 'winner-score' : ''}}">{{match.displayAScore}}</text><text class="colon">:</text><text class="{{match.winner === 'B' ? 'winner-score' : ''}}">{{match.displayBScore}}</text></view><view class="preview-team right">{{match.teamBName}}</view></view>
+        <view class="match-hint">点击查看详情、编辑比分或调整人员</view>
+      </view>
+    </view>
+    <view class="floating-actions"><view wx:if="{{event.status === 'IN_PROGRESS'}}" class="float-action manage-action {{managingMatches ? 'disabled' : ''}}" bindtap="openMatchManage">管</view><view class="float-action share-action" bindtap="shareMatches">分享</view><view class="float-action filter-action" bindtap="openFilter">筛<text wx:if="{{filterCount}}" class="filter-badge">{{filterCount}}</text></view></view>
+  </view>
+
+  <view wx:elif="{{activeTab === 'RANKING'}}">
+    <view class="ranking-actions"><view class="share-ranking" bindtap="shareRankings">分享排名</view></view>
+    <view class="ranking-card"><view wx:for="{{rankings}}" wx:key="participantId" class="ranking-row"><view class="rank rank-{{item.rank}}">{{item.rank}}</view><view class="ranking-person"><view class="ranking-name">{{item.participant.nickname}}</view><view class="ranking-meta">{{item.matchesPlayed}} 场 · {{item.wins}} 胜 {{item.losses}} 负 · 得 {{item.scored}} / 失 {{item.conceded}}</view></view><view class="ranking-points {{item.points > 0 ? 'positive' : item.points < 0 ? 'negative' : ''}}">{{item.points > 0 ? '+' : ''}}{{item.points}}<text> 分</text></view></view></view>
+  </view>
+
+  <view wx:if="{{filterVisible}}" class="modal-mask" bindtap="closeFilter">
+    <view class="modal-panel filter-panel" catchtap="noop">
+      <view class="modal-title">筛选对阵</view><view class="filter-label">比赛状态</view>
+      <view class="status-options"><view class="status-option {{statusFilter === 'ALL' ? 'active' : ''}}" data-filter="ALL" bindtap="selectStatusFilter">全部</view><view class="status-option {{statusFilter === 'PENDING' ? 'active' : ''}}" data-filter="PENDING" bindtap="selectStatusFilter">待完成</view><view class="status-option {{statusFilter === 'LIVE' ? 'active' : ''}}" data-filter="LIVE" bindtap="selectStatusFilter">比赛中</view><view class="status-option {{statusFilter === 'FINISHED' ? 'active' : ''}}" data-filter="FINISHED" bindtap="selectStatusFilter">已结束</view></view>
+      <view class="filter-label">比赛人员 <text>可多选，同时包含所选人员</text></view>
+      <checkbox-group class="participant-options" bindchange="onParticipantFilterChange"><label wx:for="{{participants}}" wx:key="id" class="participant-option"><checkbox value="{{item.id}}" checked="{{item.filterSelected}}" color="#16a66a"/>{{item.participantNumber}} · {{item.nickname}}</label></checkbox-group>
+      <view class="modal-actions"><button class="ghost-button" bindtap="clearFilter">清空</button><button class="primary-button" bindtap="applyFilters">应用筛选</button></view>
+    </view>
+  </view>
+
+  <view wx:if="{{editorVisible && activeMatch}}" class="modal-mask" bindtap="closeMatchEditor">
+    <view class="modal-panel score-panel" catchtap="noop">
+      <view class="modal-title">第 {{activeMatch.roundNumber}} 轮 · {{activeMatch.courtNumber}} 号场</view><view class="editor-status">{{activeMatch.statusLabel}}</view>
+      <view class="lineup-editor"><view wx:for="{{lineupIndices}}" wx:key="*this" wx:for-index="slotIndex" class="lineup-current-row {{canAdjustPlayers ? 'editable' : ''}}" data-slot="{{slotIndex}}" bindtap="openLineupSelector"><view><view class="lineup-slot-title">{{slotIndex < (event.matchFormat === 'SINGLES' ? 1 : 2) ? 'A队' : 'B队'}} {{slotIndex % (event.matchFormat === 'SINGLES' ? 1 : 2) + 1}}</view><view class="lineup-current-name">{{participantNames[item]}}</view></view><text class="lineup-chevron">{{canAdjustPlayers ? '更换 ›' : ''}}</text></view><button wx:if="{{canAdjustPlayers}}" class="lineup-save" loading="{{savingMatch}}" bindtap="saveLineup">保存人员调整</button><view wx:else class="locked-hint">开始计分后不可调整参赛人员；可先重置比分再修改。</view></view>
+      <view class="score-label">滚轮选择比分</view><picker mode="multiSelector" range="{{scoreColumns}}" value="{{scorePickerValue}}" bindchange="onScorePickerChange"><view class="score-wheel"><text>{{scorePickerValue[0]}}</text><text class="score-colon">:</text><text>{{scorePickerValue[1]}}</text><view class="wheel-hint">点击滚动选择 · {{event.scoreTo === 31 ? '最高 31 分' : '延长分最高 30 分'}}</view></view></picker>
+      <view class="modal-actions score-actions"><button class="ghost-button" bindtap="closeMatchEditor">取消</button><button wx:if="{{activeMatch.status !== 'SCHEDULED' || activeMatch.displayAScore > 0 || activeMatch.displayBScore > 0}}" class="reset-button" loading="{{savingMatch}}" bindtap="resetScore">重置比分</button><button class="primary-button" loading="{{savingMatch}}" bindtap="saveScore">保存比分</button></view>
+    </view>
+  </view>
+
+  <view wx:if="{{lineupSelectorVisible}}" class="modal-mask lineup-selector-mask" bindtap="closeLineupSelector">
+    <view class="modal-panel lineup-selector-panel" catchtap="noop">
+      <view class="modal-title">选择替换人员</view>
+      <view class="selector-tip">仅显示当前仍可参赛的人员</view>
+      <view class="lineup-choice-list"><view wx:for="{{selectableParticipants}}" wx:key="id" class="lineup-choice {{lineupIndices[activeLineupSlot] === index ? 'selected' : ''}}" data-index="{{index}}" bindtap="selectLineupPlayer"><view><view class="choice-name">{{item.participantNumber}} · {{item.nickname}}</view><view class="choice-meta">{{item.gender === 'MALE' ? '男' : '女'}} · {{item.level || '未填写水平'}}</view></view><text class="choice-check">{{lineupIndices[activeLineupSlot] === index ? '✓' : ''}}</text></view></view>
+      <view class="selector-cancel" bindtap="closeLineupSelector">取消</view>
+    </view>
+  </view>
+
+  <canvas canvas-id="matchesPoster" class="poster-canvas"></canvas><canvas canvas-id="rankingPoster" class="poster-canvas"></canvas>
+</view>
+
+
+
+
+
+
+
+
+
+
+
+

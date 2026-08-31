@@ -1,0 +1,4 @@
+{
+  "desc": "转转接龙页面索引配置",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

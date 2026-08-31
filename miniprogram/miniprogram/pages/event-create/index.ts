@@ -2,6 +2,7 @@ import { Gender, MatchFormat, RegistrationMode } from '../../shared/contracts';
 import type { EventDraftInput, EventDraftRecord, LocalManualParticipant, ScoreTarget } from '../../shared/models';
 import { DraftLimitError, deleteDraft, getDraft, listDrafts, saveDraft } from '../../services/draft-service';
 import { createEvent } from '../../services/event-api';
+import { isOfflineMode } from '../../services/runtime-mode';
 
 const COURT_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const SCORE_OPTIONS: ScoreTarget[] = [11, 15, 21, 31];
@@ -14,7 +15,7 @@ interface EventDraftData {
   scoreTo: ScoreTarget; scoreOptions: ScoreTarget[]; scoreIndex: number;
   rounds: number; roundOptions: number[]; roundIndex: number; recommendedRounds: number;
   levelOptions: string[]; manualNumber: string; manualNickname: string; manualGender: Gender | ''; manualLevel: string; manualLevelIndex: number;
-  manualParticipants: LocalManualParticipant[]; submitting: boolean; draftLimitReached: boolean;
+  manualParticipants: LocalManualParticipant[]; submitting: boolean; draftLimitReached: boolean; offlineMode: boolean;
 }
 interface EventCreateMethods {
   onTitleInput(event: WechatMiniprogram.Input): void; onDescriptionInput(event: WechatMiniprogram.TextareaInput): void;
@@ -34,14 +35,19 @@ Page<EventDraftData, EventCreateMethods>({
     courtCount: 1, courtOptions: COURT_OPTIONS, courtIndex: 0, scoreTo: 21, scoreOptions: SCORE_OPTIONS, scoreIndex: 2,
     rounds: 10, roundOptions: ROUND_OPTIONS, roundIndex: 9, recommendedRounds: 10,
     levelOptions: LEVEL_OPTIONS, manualNumber: '1', manualNickname: '', manualGender: '', manualLevel: '', manualLevelIndex: 0,
-    manualParticipants: [], submitting: false, draftLimitReached: false,
+    manualParticipants: [], submitting: false, draftLimitReached: false, offlineMode: false,
   },
   onLoad(query) {
-    this.setData({ draftLimitReached: listDrafts().length >= 3 });
+    const offlineMode = isOfflineMode();
+    this.setData({ draftLimitReached: listDrafts().length >= 3, offlineMode, registrationMode: offlineMode ? RegistrationMode.OrganizerManaged : RegistrationMode.WechatSelfService });
     if (!query.draftId) return;
     const draft = getDraft(query.draftId);
     if (!draft) { void wx.showToast({ title: '草稿不存在或已删除', icon: 'none' }); return; }
     applyDraftToPage(this, draft);
+    if (offlineMode && draft.registrationMode === RegistrationMode.WechatSelfService) {
+      this.setData({ registrationMode: RegistrationMode.OrganizerManaged });
+      void wx.showToast({ title: '离线模式已切换为组织者录入', icon: 'none' });
+    }
   },
   onTitleInput(event) { this.setData({ title: event.detail.value }); },
   onDescriptionInput(event) { this.setData({ description: event.detail.value }); },
@@ -52,7 +58,11 @@ Page<EventDraftData, EventCreateMethods>({
     const capacity = capacityOptions.includes(currentCapacity) ? currentCapacity : capacityOptions[0] ?? 2;
     this.setData({ matchFormat, capacityOptions, capacity, capacityIndex: Math.max(0, capacityOptions.indexOf(capacity)), recommendedRounds: 10 });
   },
-  selectRegistrationMode(event) { this.setData({ registrationMode: event.currentTarget.dataset.mode as RegistrationMode, recommendedRounds: 10 }); },
+  selectRegistrationMode(event) {
+    const mode = event.currentTarget.dataset.mode as RegistrationMode;
+    if (this.data.offlineMode && mode === RegistrationMode.WechatSelfService) { void wx.showToast({ title: '离线模式无法使用微信自主报名', icon: 'none' }); return; }
+    this.setData({ registrationMode: mode, recommendedRounds: 10 });
+  },
   onCapacityChange(event) { const capacityIndex = Number(event.detail.value); const capacity = this.data.capacityOptions[capacityIndex]; if (capacity !== undefined) this.setData({ capacity, capacityIndex }); },
   onCourtChange(event) { const courtIndex = Number(event.detail.value); const courtCount = COURT_OPTIONS[courtIndex]; if (courtCount !== undefined) this.setData({ courtCount, courtIndex }); },
   onScoreChange(event) { const scoreIndex = Number(event.detail.value); const scoreTo = SCORE_OPTIONS[scoreIndex]; if (scoreTo !== undefined) this.setData({ scoreTo, scoreIndex }); },
@@ -165,5 +175,4 @@ function applyDraftToPage(page: WechatMiniprogram.Page.Instance<EventDraftData, 
     manualNumber: getNextParticipantNumber(draft.manualParticipants), draftLimitReached: false,
   });
 }
-
 

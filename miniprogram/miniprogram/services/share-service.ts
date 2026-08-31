@@ -4,7 +4,7 @@ export interface PosterInput {
   title: string;
   subtitle: string;
   lines: readonly string[];
-  entrancePath: string;
+  entrancePath?: string;
 }
 
 export async function copyShareText(text: string): Promise<void> {
@@ -37,7 +37,9 @@ export async function buildAndSharePoster(input: PosterInput): Promise<void> {
     });
   });
   try {
-    await wx.showShareImageMenu({ path: tempFilePath, needShowEntrance: true, entrancePath: input.entrancePath });
+    await wx.showShareImageMenu(input.entrancePath
+      ? { path: tempFilePath, needShowEntrance: true, entrancePath: input.entrancePath }
+      : { path: tempFilePath, needShowEntrance: false });
   } catch (error) {
     const message = getErrorMessage(error);
     if (message.includes('cancel')) return;

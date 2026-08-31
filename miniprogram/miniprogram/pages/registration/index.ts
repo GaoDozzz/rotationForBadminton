@@ -1,6 +1,7 @@
 import { Gender } from '../../shared/contracts';
 import type { ApiEventRecord } from '../../shared/models';
 import { getSharedEvent, joinEvent } from '../../services/event-api';
+import { isOfflineMode } from '../../services/runtime-mode';
 
 const LEVEL_OPTIONS = ['请选择水平（选填）', ...Array.from({ length: 15 }, (_, index) => `L${1 + index * 0.5}`)];
 interface RegistrationData { shareCode: string; event?: ApiEventRecord; nickname: string; gender: Gender | ''; level: string; levelIndex: number; levelOptions: string[]; submitting: boolean; }
@@ -8,7 +9,11 @@ interface RegistrationMethods { onNicknameInput(event: WechatMiniprogram.Input):
 
 Page<RegistrationData, RegistrationMethods>({
   data: { shareCode: '', nickname: '', gender: '', level: '', levelIndex: 0, levelOptions: LEVEL_OPTIONS, submitting: false },
-  onLoad(query) { if (!query.shareCode) { void wx.showToast({ title: '分享链接无效', icon: 'none' }); return; } this.setData({ shareCode: query.shareCode }); void getSharedEvent(query.shareCode).then((event) => this.setData({ event })).catch((error: unknown) => wx.showToast({ title: error instanceof Error ? error.message : '球局加载失败', icon: 'none' })); },
+  onLoad(query) {
+    if (isOfflineMode()) { void wx.showModal({ title: '离线模式不可报名', content: '微信自主报名需要连接后台服务器，请退出离线模式并重新连接。', showCancel: false }).then(() => wx.reLaunch({ url: '/pages/home/index' })); return; }
+    if (!query.shareCode) { void wx.showToast({ title: '分享链接无效', icon: 'none' }); return; }
+    this.setData({ shareCode: query.shareCode }); void getSharedEvent(query.shareCode).then((event) => this.setData({ event })).catch((error: unknown) => wx.showToast({ title: error instanceof Error ? error.message : '球局加载失败', icon: 'none' }));
+  },
   onNicknameInput(event) { this.setData({ nickname: event.detail.value }); },
   selectGender(event) { this.setData({ gender: event.currentTarget.dataset.gender as Gender }); },
   onLevelChange(event) { const levelIndex = Number(event.detail.value); this.setData({ levelIndex, level: levelIndex === 0 ? '' : LEVEL_OPTIONS[levelIndex] ?? '' }); },

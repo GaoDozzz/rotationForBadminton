@@ -1,38 +1,60 @@
 import { request } from '../../services/api-client';
-import { deleteDraft, listDrafts } from '../../services/draft-service';
+import { deleteDraft, listDrafts, listPersistentDrafts } from '../../services/draft-service';
 import { deleteEvent, listEvents } from '../../services/event-api';
+import { beginOfflineSession, resetOfflineSession } from '../../services/offline-session';
+import { enterOfflineMode, isOfflineMode, leaveOfflineMode } from '../../services/runtime-mode';
 import type { ApiEventRecord, EventDraftRecord } from '../../shared/models';
 
 type Category = 'ALL' | 'IN_PROGRESS' | 'REGISTRATION_OPEN' | 'DRAFT' | 'FINISHED';
 interface HomeData {
   serverStatus: 'checking' | 'online' | 'offline'; drafts: EventDraftRecord[]; events: ApiEventRecord[];
   inProgressEvents: ApiEventRecord[]; registrationEvents: ApiEventRecord[]; finishedEvents: ApiEventRecord[];
-  activeCategory: Category; openRowKey: string; loading: boolean;
+  activeCategory: Category; openRowKey: string; loading: boolean; offlineMode: boolean;
 }
 interface HomeMethods {
-  loadData(): Promise<void>; checkServer(): Promise<void>; createEvent(): void; selectCategory(event: WechatMiniprogram.TouchEvent): void;
+  loadData(): Promise<void>; applyEventLists(events: ApiEventRecord[], offlineMode: boolean): void; checkServer(): Promise<void>; createEvent(): void; selectCategory(event: WechatMiniprogram.TouchEvent): void;
   openDraft(event: WechatMiniprogram.TouchEvent): void; openEvent(event: WechatMiniprogram.TouchEvent): void;
   editDraft(event: WechatMiniprogram.TouchEvent): void; removeDraft(event: WechatMiniprogram.TouchEvent): Promise<void>;
   removeEvent(event: WechatMiniprogram.TouchEvent): Promise<void>; onRowTouchStart(event: WechatMiniprogram.TouchEvent): void;
   onRowTouchEnd(event: WechatMiniprogram.TouchEvent): void; onDraftLongPress(event: WechatMiniprogram.TouchEvent): Promise<void>;
   onEventLongPress(event: WechatMiniprogram.TouchEvent): Promise<void>; closeActions(): void;
+  useOfflineMode(): void; restartAndReconnect(): Promise<void>;
 }
 
 let gesture: { x: number; y: number; key: string } | undefined;
 
 Page<HomeData, HomeMethods>({
-  data: { serverStatus: 'checking', drafts: [], events: [], inProgressEvents: [], registrationEvents: [], finishedEvents: [], activeCategory: 'ALL', openRowKey: '', loading: false },
+  data: { serverStatus: 'checking', drafts: [], events: [], inProgressEvents: [], registrationEvents: [], finishedEvents: [], activeCategory: 'ALL', openRowKey: '', loading: false, offlineMode: false },
   onShow() { void this.loadData(); },
   async loadData() {
     this.setData({ loading: true, drafts: listDrafts() });
+    if (isOfflineMode()) {
+      const events = await listEvents();
+      this.applyEventLists(events, true);
+      this.setData({ serverStatus: 'offline', offlineMode: true, loading: false });
+      return;
+    }
     try {
       const events = await listEvents();
-      this.setData({ events, inProgressEvents: events.filter((item) => item.status === 'IN_PROGRESS'), registrationEvents: events.filter((item) => ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'SCHEDULE_READY'].includes(item.status)), finishedEvents: events.filter((item) => item.status === 'FINISHED'), serverStatus: 'online' });
-    } catch { this.setData({ serverStatus: 'offline' }); }
+      this.applyEventLists(events, false); this.setData({ serverStatus: 'online', offlineMode: false });
+    } catch { this.setData({ serverStatus: 'offline', offlineMode: false, events: [], inProgressEvents: [], registrationEvents: [], finishedEvents: [] }); }
     finally { this.setData({ loading: false }); }
+  },
+  applyEventLists(events: ApiEventRecord[], offlineMode: boolean) {
+    this.setData({ events, inProgressEvents: events.filter((item) => item.status === 'IN_PROGRESS'), registrationEvents: events.filter((item) => ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'SCHEDULE_READY'].includes(item.status)), finishedEvents: events.filter((item) => item.status === 'FINISHED'), offlineMode });
   },
   async checkServer() { try { await request({ path: '/health/live' }); this.setData({ serverStatus: 'online' }); } catch { this.setData({ serverStatus: 'offline' }); } },
   createEvent() { if (this.data.drafts.length >= 3) void wx.showToast({ title: '草稿已满，仍可直接发起球局', icon: 'none' }); void wx.navigateTo({ url: '/pages/event-create/index' }); },
+  useOfflineMode() {
+    beginOfflineSession(listPersistentDrafts()); enterOfflineMode();
+    void wx.showToast({ title: '已进入离线模式', icon: 'success' }); void this.loadData();
+  },
+  async restartAndReconnect() {
+    const result = await wx.showModal({ title: '退出离线并重新连接', content: '本次离线创建的球局和离线草稿变更将被清除，原有持久草稿不受影响。是否继续？', confirmText: '重新进入' });
+    if (!result.confirm) return;
+    resetOfflineSession(); leaveOfflineMode();
+    void wx.reLaunch({ url: '/pages/home/index' });
+  },
   selectCategory(event) { this.setData({ activeCategory: event.currentTarget.dataset.category as Category, openRowKey: '' }); },
   openDraft(event) { if (this.data.openRowKey) { this.closeActions(); return; } void wx.navigateTo({ url: `/pages/draft-detail/index?id=${String(event.currentTarget.dataset.id)}` }); },
   openEvent(event) { if (this.data.openRowKey) { this.closeActions(); return; } void wx.navigateTo({ url: `/pages/event-detail/index?eventId=${String(event.currentTarget.dataset.id)}` }); },

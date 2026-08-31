@@ -1,6 +1,6 @@
 <view class="page" wx:if="{{event}}">
   <view class="hero-card">
-    <view class="hero-top"><text class="status">{{statusLabel}}</text><text class="meta">{{formatLabel}} · {{registrationLabel}}</text></view>
+    <view class="hero-top"><view><text class="status">{{statusLabel}}</text><text wx:if="{{offlineMode}}" class="status"> · 离线临时球局</text></view><text class="meta">{{formatLabel}} · {{registrationLabel}}</text></view>
     <view class="title">{{event.title}}</view>
     <view class="stats"><view><view class="value">{{event.capacity || participants.length}}</view><view class="unit">参赛人数</view></view><view><view class="value">{{event.courtCount}}</view><view class="unit">场地</view></view><view><view class="value">{{event.rounds}}</view><view class="unit">轮次</view></view><view><view class="value">{{event.scoreTo}}</view><view class="unit">分制</view></view></view>
   </view>
@@ -62,7 +62,6 @@
 
   <canvas canvas-id="matchesPoster" class="poster-canvas"></canvas><canvas canvas-id="rankingPoster" class="poster-canvas"></canvas>
 </view>
-
 
 
 

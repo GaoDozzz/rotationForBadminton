@@ -3,6 +3,7 @@ import type { ApiEventRecord, ApiMatchRecord, ApiParticipant, ApiRankingEntry } 
 import { startEvent } from '../../services/event-actions-api';
 import { deleteEvent, getEvent, listMatches, listRankings, regenerateMatches, updateMatchPlayers, updateMatchScore } from '../../services/event-api';
 import { buildAndSharePoster, copyShareText, isActionSheetCancel } from '../../services/share-service';
+import { isOfflineMode } from '../../services/runtime-mode';
 
 type DetailTab = 'INFO' | 'MATCHES' | 'RANKING';
 type MatchFilter = 'ALL' | 'PENDING' | 'LIVE' | 'FINISHED';
@@ -14,7 +15,7 @@ interface RoundPreview { roundNumber: number; matches: MatchPreview[]; completed
 interface EventDetailData {
   eventId: string; event?: ApiEventRecord; activeTab: DetailTab; formatLabel: string; registrationLabel: string; statusLabel: string;
   participants: ParticipantView[]; selectableParticipants: ParticipantView[]; participantNames: string[]; rankings: ApiRankingEntry[]; allMatches: MatchPreview[]; roundGroups: RoundPreview[];
-  loading: boolean; submitting: boolean; filterVisible: boolean; statusFilter: MatchFilter; selectedParticipantIds: string[]; filterCount: number;
+  loading: boolean; submitting: boolean; filterVisible: boolean; statusFilter: MatchFilter; selectedParticipantIds: string[]; filterCount: number; offlineMode: boolean;
   editorVisible: boolean; activeMatchId: string; activeMatch?: MatchPreview; scoreColumns: number[][]; scorePickerValue: number[];
   lineupIndices: number[]; canAdjustPlayers: boolean; savingMatch: boolean; managingMatches: boolean; lineupSelectorVisible: boolean; activeLineupSlot: number;
 }
@@ -32,13 +33,14 @@ interface EventDetailMethods {
 Page<EventDetailData, EventDetailMethods>({
   data: {
     eventId: '', activeTab: 'INFO', formatLabel: '', registrationLabel: '', statusLabel: '', participants: [], selectableParticipants: [], participantNames: [],
-    rankings: [], allMatches: [], roundGroups: [], loading: true, submitting: false,
+    rankings: [], allMatches: [], roundGroups: [], loading: true, submitting: false, offlineMode: false,
     filterVisible: false, statusFilter: 'ALL', selectedParticipantIds: [], filterCount: 0,
     editorVisible: false, activeMatchId: '', scoreColumns: [[], []], scorePickerValue: [0, 0], lineupIndices: [], canAdjustPlayers: false, savingMatch: false, managingMatches: false, lineupSelectorVisible: false, activeLineupSlot: -1,
   },
   onLoad(query) {
     if (!query.eventId) { void wx.showToast({ title: '缺少球局参数', icon: 'none' }); return; }
-    this.setData({ eventId: query.eventId });
+    const offlineMode = isOfflineMode(); this.setData({ eventId: query.eventId, offlineMode });
+    if (offlineMode) void wx.hideShareMenu(); else void wx.showShareMenu({ menus: ['shareAppMessage'] });
   },
   onShow() { if (this.data.eventId) void this.loadEvent(this.data.eventId); },
   noop() {},
@@ -206,7 +208,7 @@ Page<EventDetailData, EventDetailMethods>({
       else if (action.tapIndex === 1) await buildAndSharePoster({
         page: this as unknown as WechatMiniprogram.Component.TrivialInstance, canvasId: 'matchesPoster', title: event.title,
         subtitle: `${this.data.formatLabel} · ${event.courtCount} 场地 · ${event.rounds} 轮 · ${event.scoreTo} 分制`,
-        lines, entrancePath: `/pages/event-detail/index?eventId=${event.id}`,
+        lines, entrancePath: this.data.offlineMode ? undefined : `/pages/event-detail/index?eventId=${event.id}`,
       });
     } catch (error) { if (!isActionSheetCancel(error)) void wx.showToast({ title: '对阵分享生成失败', icon: 'none' }); }
   },
@@ -218,11 +220,12 @@ Page<EventDetailData, EventDetailMethods>({
       if (action.tapIndex === 0) await copyShareText(text);
       else if (action.tapIndex === 1) await buildAndSharePoster({
         page: this as unknown as WechatMiniprogram.Component.TrivialInstance, canvasId: 'rankingPoster', title: `${event.title} · 积分排名`,
-        subtitle: `${this.data.formatLabel} · 胜方加分 / 负方减分`, lines, entrancePath: `/pages/event-detail/index?eventId=${event.id}`,
+        subtitle: `${this.data.formatLabel} · 胜方加分 / 负方减分`, lines, entrancePath: this.data.offlineMode ? undefined : `/pages/event-detail/index?eventId=${event.id}`,
       });
     } catch (error) { if (!isActionSheetCancel(error)) void wx.showToast({ title: '排名分享生成失败', icon: 'none' }); }
   },
   onShareAppMessage() {
+    if (this.data.offlineMode) { void wx.showToast({ title: '离线球局不支持链接分享', icon: 'none' }); return { title: '转转接龙', path: '/pages/home/index' }; }
     const event = this.data.event;
     return { title: event ? `${event.title}｜邀请你报名` : '转转接龙', path: event ? `/pages/registration/index?shareCode=${event.shareCode}` : '/pages/home/index' };
   },
@@ -255,7 +258,6 @@ function matchPosterLines(matches: readonly MatchPreview[]): string[] {
   }
   return result;
 }
-
 
 
 

@@ -8,7 +8,7 @@
 
   <view wx:if="{{activeTab === 'INFO'}}">
     <view wx:if="{{event.description}}" class="card description-card"><view class="section-title">比赛说明</view><view class="description-text">{{event.description}}</view></view>
-    <view wx:if="{{event.registrationMode === 'WECHAT_SELF_SERVICE' && event.status === 'REGISTRATION_OPEN'}}" class="actions"><button class="primary-button" open-type="share">分享报名</button><button class="secondary-button" loading="{{submitting}}" disabled="{{submitting}}" bindtap="beginEvent">生成对阵并开始</button></view>
+    <view wx:if="{{event.status === 'REGISTRATION_OPEN' || event.status === 'REGISTRATION_CLOSED' || event.status === 'SCHEDULE_READY'}}" class="actions"><button wx:if="{{!offlineMode && event.registrationMode === 'WECHAT_SELF_SERVICE'}}" class="primary-button" open-type="share">分享报名</button><button class="secondary-button" loading="{{submitting}}" disabled="{{submitting}}" bindtap="beginEvent">生成对阵并开始</button></view>
     <button wx:if="{{event.status === 'IN_PROGRESS'}}" class="manage-button" bindtap="openParticipantManage"><view class="manage-icon">调</view><view class="manage-copy"><view class="manage-title">人员调整</view><view class="manage-subtitle">临时退出后智能重排剩余场次 · 总轮数不变</view></view><view class="manage-arrow">›</view></button>
     <view wx:if="{{participants.length}}" class="card roster"><view class="section-head"><view class="section-title">参赛名单</view><view class="section-note">积分随已结束比分实时更新</view></view><view wx:for="{{participants}}" wx:key="id" class="participant {{item.status === 'WITHDRAWN' ? 'withdrawn' : ''}}"><text class="number">{{item.participantNumber}}</text><view class="participant-main"><view class="participant-name-line">{{item.nickname}} · {{item.gender === 'MALE' ? '男' : '女'}}<text wx:if="{{item.status === 'WITHDRAWN'}}" class="withdrawn-badge">已退出</text></view><view class="level">{{item.level || '未填写水平'}} · 已打 {{item.matchesPlayed}} 场</view></view><text class="points {{item.points > 0 ? 'positive' : item.points < 0 ? 'negative' : ''}}">{{item.points > 0 ? '+' : ''}}{{item.points}}</text></view></view>
     <button class="danger-button" bindtap="deleteCurrentEvent">删除球局</button>
@@ -45,8 +45,8 @@
   <view wx:if="{{editorVisible && activeMatch}}" class="modal-mask" bindtap="closeMatchEditor">
     <view class="modal-panel score-panel" catchtap="noop">
       <view class="modal-title">第 {{activeMatch.roundNumber}} 轮 · {{activeMatch.courtNumber}} 号场</view><view class="editor-status">{{activeMatch.statusLabel}}</view>
-      <view class="lineup-editor"><view wx:for="{{lineupIndices}}" wx:key="*this" wx:for-index="slotIndex" class="lineup-current-row {{canAdjustPlayers ? 'editable' : ''}}" data-slot="{{slotIndex}}" bindtap="openLineupSelector"><view><view class="lineup-slot-title">{{slotIndex < (event.matchFormat === 'SINGLES' ? 1 : 2) ? 'A队' : 'B队'}} {{slotIndex % (event.matchFormat === 'SINGLES' ? 1 : 2) + 1}}</view><view class="lineup-current-name">{{participantNames[item]}}</view></view><text class="lineup-chevron">{{canAdjustPlayers ? '更换 ›' : ''}}</text></view><button wx:if="{{canAdjustPlayers}}" class="lineup-save" loading="{{savingMatch}}" bindtap="saveLineup">保存人员调整</button><view wx:else class="locked-hint">开始计分后不可调整参赛人员；可先重置比分再修改。</view></view>
-      <view class="score-label">滚轮选择比分</view><picker mode="multiSelector" range="{{scoreColumns}}" value="{{scorePickerValue}}" bindchange="onScorePickerChange"><view class="score-wheel"><text>{{scorePickerValue[0]}}</text><text class="score-colon">:</text><text>{{scorePickerValue[1]}}</text><view class="wheel-hint">点击滚动选择 · {{event.scoreTo === 31 ? '最高 31 分' : '延长分最高 30 分'}}</view></view></picker>
+      <view class="lineup-editor"><view wx:for="{{lineupSlots}}" wx:key="*this" wx:for-index="slotIndex" class="lineup-current-row {{canAdjustPlayers ? 'editable' : ''}}" data-slot="{{slotIndex}}" catchtap="openLineupSelector"><view><view class="lineup-slot-title">{{slotIndex < (event.matchFormat === 'SINGLES' ? 1 : 2) ? 'A队' : 'B队'}} {{slotIndex % (event.matchFormat === 'SINGLES' ? 1 : 2) + 1}}</view><view class="lineup-current-name">{{participantNames[lineupIndices[slotIndex]]}}</view></view><text class="lineup-chevron">{{canAdjustPlayers ? '更换 ›' : ''}}</text></view><button wx:if="{{canAdjustPlayers}}" class="lineup-save" loading="{{savingMatch}}" disabled="{{savingMatch}}" catchtap="saveLineup">保存人员调整</button><view wx:else class="locked-hint">开始计分后不可调整参赛人员；可先重置比分再修改。</view></view>
+      <view class="score-label">滚轮选择比分</view><picker mode="multiSelector" range="{{scoreColumns}}" value="{{scorePickerValue}}" bindchange="onScorePickerChange"><view class="score-wheel"><text>{{scorePickerValue[0]}}</text><text class="score-colon">:</text><text>{{scorePickerValue[1]}}</text><view class="wheel-hint">点击滚动选择 · 最高 31 分</view></view></picker>
       <view class="modal-actions score-actions"><button class="ghost-button" bindtap="closeMatchEditor">取消</button><button wx:if="{{activeMatch.status !== 'SCHEDULED' || activeMatch.displayAScore > 0 || activeMatch.displayBScore > 0}}" class="reset-button" loading="{{savingMatch}}" bindtap="resetScore">重置比分</button><button class="primary-button" loading="{{savingMatch}}" bindtap="saveScore">保存比分</button></view>
     </view>
   </view>
@@ -60,11 +60,8 @@
     </view>
   </view>
 
-  <canvas canvas-id="matchesPoster" class="poster-canvas"></canvas><canvas canvas-id="rankingPoster" class="poster-canvas"></canvas>
+  <canvas canvas-id="matchesPoster" class="poster-canvas" style="width:375px;height:{{posterCanvasHeight}}px"></canvas><canvas canvas-id="rankingPoster" class="poster-canvas" style="width:375px;height:{{posterCanvasHeight}}px"></canvas>
 </view>
-
-
-
 
 
 

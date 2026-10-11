@@ -7,6 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { EventStatus, MatchSide, MatchStatus, ParticipantStatus, Prisma } from '../../generated/prisma/client';
 import type { CreateEventDto, JoinEventDto, UpdateMatchPlayersDto, UpdateMatchScoreDto } from './event.dto';
 import { IdentityService } from './identity.service';
+import { parseEventTransfer } from '@zzjl/contracts';
 
 type MatchFilter = 'ALL' | 'PENDING' | 'LIVE' | 'FINISHED';
 
@@ -25,6 +26,51 @@ export class EventsService {
       include: { _count: { select: { participants: true, matches: true } } },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  /**
+   * 在同一事务中保存比赛、名单、原对阵和审计记录。事务失败时不会留下空壳球局。
+   * 使用组织者级锁串行检查名称；外部 ID、报名链接和原组织者身份均不沿用。
+   * 排名不导入缓存，而是使用当前完赛记录实时重算。
+   */
+  async importEvent(openid: string, text: string) {
+    let data: ReturnType<typeof parseEventTransfer>;
+    try { data = parseEventTransfer(text); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : '导入格式无效'); }
+    const organizer = await this.identity.ensureUser(openid);
+    return this.redis.withLock(`event-create:${organizer.id}`, async () => this.prisma.$transaction(async (tx) => {
+      const title = data.title.trim();
+      if (await tx.event.findFirst({ where: { organizerId: organizer.id, deletedAt: null, title } })) throw new ConflictException('球局名称已存在，请使用新名称导入');
+      const now = new Date();
+      const event = await tx.event.create({ data: {
+        organizerId: organizer.id, title, description: data.description, shareCode: await this.uniqueShareCode(tx),
+        matchFormat: data.matchFormat, registrationMode: RegistrationMode.OrganizerManaged, status: data.status,
+        capacity: data.capacity ?? data.participants.length, courtCount: data.courtCount, scoreTo: data.scoreTo, rounds: data.rounds,
+        startedAt: data.matches.length ? now : null, finishedAt: data.status === 'FINISHED' ? now : null,
+      } });
+      const ids = new Map<string, string>();
+      for (const p of data.participants) {
+        const participant = await tx.participant.create({ data: {
+          eventId: event.id, participantNumber: p.participantNumber, nickname: p.nickname, gender: p.gender,
+          level: p.level, source: ParticipantSource.OrganizerEntry, status: p.status, withdrawnAt: p.status === 'WITHDRAWN' ? now : null,
+        } });
+        ids.set(p.participantNumber, participant.id);
+      }
+      for (const m of data.matches) {
+        const finished = ['COMPLETED', 'WALKOVER'].includes(m.status);
+        await tx.match.create({ data: {
+          eventId: event.id, roundNumber: m.roundNumber, courtNumber: m.courtNumber, scheduleVersion: event.scheduleVersion,
+          status: m.status, teamAScore: m.teamAScore, teamBScore: m.teamBScore,
+          startedAt: m.status === 'SCHEDULED' ? null : now, completedAt: finished ? now : null, confirmedAt: finished ? now : null,
+          resultType: finished ? m.status === 'WALKOVER' ? 'WALKOVER' : 'NORMAL' : null,
+          players: { create: [
+            ...m.teamA.map((number, position) => ({ participantId: ids.get(number)!, side: MatchSide.A, position })),
+            ...m.teamB.map((number, position) => ({ participantId: ids.get(number)!, side: MatchSide.B, position })),
+          ] },
+        } });
+      }
+      await this.audit(tx, event.id, organizer.id, 'EVENT_IMPORTED', 'event', event.id, null, { title, matches: data.matches.length });
+      return tx.event.findUniqueOrThrow({ where: { id: event.id }, include: { participants: true, _count: { select: { participants: true, matches: true } } } });
+    }, { timeout: 45000 }), 60000);
   }
 
   async create(openid: string, dto: CreateEventDto) {
@@ -82,7 +128,8 @@ export class EventsService {
     return this.redis.withLock(`schedule:${eventId}`, () => this.prisma.$transaction(async (tx) => {
       const event = await this.assertOrganizer(tx, eventId, organizer.id);
       if (![EventStatus.REGISTRATION_OPEN, EventStatus.REGISTRATION_CLOSED, EventStatus.SCHEDULE_READY].includes(event.status)) throw new ConflictException('当前球局状态不能生成对阵');
-      await this.generateSchedule(tx, event.id);
+      const existingMatches = await tx.match.count({ where: { eventId, status: { not: MatchStatus.CANCELLED } } });
+      if (!existingMatches) await this.generateSchedule(tx, event.id);
       const updated = await tx.event.update({ where: { id: event.id }, data: { status: EventStatus.IN_PROGRESS, startedAt: event.startedAt ?? new Date() } });
       await this.audit(tx, event.id, organizer.id, 'EVENT_STARTED', 'event', event.id, event, updated);
       return updated;
@@ -110,7 +157,7 @@ export class EventsService {
 
   /**
    * 0:0 会把场次完整重置为未开始。11/15/21 分制采用羽毛球延长分：达到目标分且领先两分结束，
-   * 29:29 后先到 30 分结束；31 分制不延长，先到 31 分结束。排名始终从已完成场次重新计算，
+   * 30:30 后先到 31 分结束；31 分制不延长，先到 31 分结束。排名始终从已完成场次重新计算，
    * 因而修改或重置已结束比分不会残留旧积分。
    */
   async updateMatchScore(eventId: string, matchId: string, openid: string, dto: UpdateMatchScoreDto) {
@@ -121,12 +168,12 @@ export class EventsService {
       if (!match || match.status === MatchStatus.CANCELLED) throw new NotFoundException('对阵不存在或已取消');
 
       const rule = scoreRuleFor(event.scoreTo);
-      const maximum = event.scoreTo === 31 ? 31 : 30;
+      const maximum = 31;
       if (dto.teamAScore > maximum || dto.teamBScore > maximum) throw new BadRequestException(`比分不能超过 ${maximum}`);
       const hasStarted = dto.teamAScore > 0 || dto.teamBScore > 0;
       const looksFinished = event.scoreTo === 31
         ? Math.max(dto.teamAScore, dto.teamBScore) === 31
-        : Math.max(dto.teamAScore, dto.teamBScore) >= event.scoreTo && (Math.abs(dto.teamAScore - dto.teamBScore) >= 2 || Math.max(dto.teamAScore, dto.teamBScore) === 30);
+        : Math.max(dto.teamAScore, dto.teamBScore) >= event.scoreTo && (Math.abs(dto.teamAScore - dto.teamBScore) >= 2 || Math.max(dto.teamAScore, dto.teamBScore) === 31);
       let completed = false;
       if (looksFinished) {
         const validation = validateFinalScore(dto.teamAScore, dto.teamBScore, rule);
@@ -192,7 +239,7 @@ export class EventsService {
       where: { id: eventId, deletedAt: null },
       include: {
         participants: { where: { status: { not: ParticipantStatus.WAITLISTED } } },
-        matches: { where: { status: MatchStatus.COMPLETED }, include: { players: true } },
+        matches: { where: { status: { in: [MatchStatus.COMPLETED, MatchStatus.WALKOVER] } }, include: { players: true } },
       },
     });
     if (!event) throw new NotFoundException('球局不存在或已删除');
@@ -203,7 +250,7 @@ export class EventsService {
         id: match.id, format: event.matchFormat as MatchFormat,
         teamAPlayerIds: match.players.filter((player) => player.side === MatchSide.A).map((player) => player.participantId),
         teamBPlayerIds: match.players.filter((player) => player.side === MatchSide.B).map((player) => player.participantId),
-        teamAScore: match.teamAScore, teamBScore: match.teamBScore, scoreRule: rule, resultType: 'NORMAL' as const,
+        teamAScore: match.teamAScore, teamBScore: match.teamBScore, scoreRule: rule, resultType: match.status === MatchStatus.WALKOVER ? 'WALKOVER' as const : 'NORMAL' as const,
       }]),
     );
     const participants = new Map(event.participants.map((participant) => [participant.id, participant]));
@@ -366,7 +413,7 @@ function formatLabel(format: MatchFormat): string {
 function scoreRuleFor(scoreTo: number): ScoreRule {
   return scoreTo === 31
     ? { scoreTo: 31, finishRule: FinishRule.FirstTo }
-    : { scoreTo: scoreTo as 11 | 15 | 21, finishRule: FinishRule.DeuceWithCap, scoreCap: 30 };
+    : { scoreTo: scoreTo as 11 | 15 | 21, finishRule: FinishRule.DeuceWithCap, scoreCap: 31 };
 }
 
 function filterStatuses(filter: MatchFilter): MatchStatus[] | undefined {
@@ -375,10 +422,6 @@ function filterStatuses(filter: MatchFilter): MatchStatus[] | undefined {
   if (filter === 'FINISHED') return [MatchStatus.COMPLETED, MatchStatus.WALKOVER];
   return undefined;
 }
-
-
-
-
 
 
 

@@ -8,6 +8,8 @@ infrastructure/redis/users.acl
 infrastructure/*_LOCAL_CONNECTIONS.txt
 server/src/generated/
 *.log
+# Generated WeChat runtime JavaScript; TypeScript remains the source of truth.
+miniprogram/miniprogram/**/*.js
 
 # WeChat Developer Tools local identity and preferences
 project.config.json

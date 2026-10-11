@@ -17,6 +17,18 @@ function draft(format: MatchFormat = MatchFormat.Singles, count = 4): EventDraft
 describe('offline session', () => {
   beforeEach(() => beginOfflineSession([]));
 
+  it.each([11, 15, 21, 31] as const)('supports scores up to 31 for target %s and updates rankings at completion', (scoreTo) => {
+    const event = createOfflineEvent({ ...draft(), scoreTo });
+    const match = listOfflineMatches(event.id, 'ALL')[0]!;
+    expect(updateOfflineScore(event.id, match.id, 30, 29).status).toBe('IN_PROGRESS');
+    expect(listOfflineRankings(event.id).every((row) => row.points === 0)).toBe(true);
+    expect(updateOfflineScore(event.id, match.id, 31, 30).status).toBe('COMPLETED');
+    expect(listOfflineRankings(event.id).map((row) => row.points).sort((a, b) => a - b)).toEqual([-1, 0, 0, 1]);
+    expect(() => updateOfflineScore(event.id, match.id, 32, 30)).toThrow('31');
+    if (scoreTo !== 31) expect(() => updateOfflineScore(event.id, match.id, 31, 28)).toThrow('终局');
+    expect(listOfflineMatches(event.id, 'ALL')[0]!.teamAScore).toBe(31);
+  });
+
   it('creates a memory-only event with the configured round count and varied singles opponents', () => {
     const event = createOfflineEvent(draft()); const matches = listOfflineMatches(event.id, 'ALL');
     expect(new Set(matches.map((item) => item.roundNumber)).size).toBe(10);

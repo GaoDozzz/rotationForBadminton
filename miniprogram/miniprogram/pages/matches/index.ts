@@ -9,7 +9,7 @@ interface MatchView extends ApiMatchRecord {
 interface RoundGroup { roundNumber: number; matches: MatchView[]; completedCount: number; }
 interface MatchesData {
   eventId: string; event?: ApiEventRecord; activeFilter: MatchFilter; matches: MatchView[]; roundGroups: RoundGroup[]; loading: boolean;
-  editingMatchId: string; scoreColumns: number[][]; scorePickerValue: number[]; saving: boolean;
+  editingMatchId: string; scoreColumns: number[][]; scorePickerValue: number[]; saving: boolean; posterCanvasHeight: number;
 }
 interface MatchesMethods {
   selectFilter(event: WechatMiniprogram.TouchEvent): void; loadMatches(): Promise<void>; editScore(event: WechatMiniprogram.TouchEvent): void;
@@ -17,7 +17,7 @@ interface MatchesMethods {
 }
 
 Page<MatchesData, MatchesMethods>({
-  data: { eventId: '', activeFilter: 'ALL', matches: [], roundGroups: [], loading: false, editingMatchId: '', scoreColumns: [[], []], scorePickerValue: [0, 0], saving: false },
+  data: { eventId: '', activeFilter: 'ALL', matches: [], roundGroups: [], loading: false, editingMatchId: '', scoreColumns: [[], []], scorePickerValue: [0, 0], saving: false, posterCanvasHeight: 880 },
   onLoad(query) {
     if (!query.eventId) { void wx.showToast({ title: '缺少球局参数', icon: 'none' }); return; }
     this.setData({ eventId: query.eventId });
@@ -37,7 +37,7 @@ Page<MatchesData, MatchesMethods>({
     const match = this.data.matches.find((item) => item.id === String(event.currentTarget.dataset.id));
     const currentEvent = this.data.event;
     if (!match || !currentEvent) return;
-    const maximum = currentEvent.scoreTo === 31 ? 31 : 30;
+    const maximum = 31;
     const scores = Array.from({ length: maximum + 1 }, (_, index) => index);
     const untouched = match.displayAScore === 0 && match.displayBScore === 0;
     this.setData({ editingMatchId: match.id, scoreColumns: [scores, scores], scorePickerValue: untouched ? [currentEvent.scoreTo, 0] : [match.displayAScore, match.displayBScore] });
@@ -95,5 +95,4 @@ function groupByRound(matches: readonly MatchView[]): RoundGroup[] {
 }
 function matchShareText(event: ApiEventRecord, matches: readonly MatchView[]): string { return [`【${event.title}】`, `${event.matchFormat === 'SINGLES' ? '单打' : event.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}｜${event.courtCount} 场地｜${event.rounds} 轮｜${event.scoreTo} 分制`, ...matchPosterLines(matches)].join('\n'); }
 function matchPosterLines(matches: readonly MatchView[]): string[] { const result: string[] = []; let round = 0; for (const match of matches) { if (match.roundNumber !== round) { round = match.roundNumber; result.push(`—— 第 ${round} 轮 ——`); } result.push(`${match.courtNumber}号场  ${match.teamAName}  ${match.displayAScore}:${match.displayBScore}  ${match.teamBName}`); } return result; }
-
 

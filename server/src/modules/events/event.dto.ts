@@ -40,3 +40,7 @@ export class UpdateMatchPlayersDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(2) @IsString({ each: true }) teamAPlayerIds!: string[];
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(2) @IsString({ each: true }) teamBPlayerIds!: string[];
 }
+
+export class ImportEventDto {
+  @IsString() @MinLength(1) @MaxLength(180000) text!: string;
+}

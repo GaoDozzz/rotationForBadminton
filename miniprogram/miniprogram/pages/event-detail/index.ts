@@ -4,6 +4,7 @@ import { startEvent } from '../../services/event-actions-api';
 import { deleteEvent, getEvent, listMatches, listRankings, regenerateMatches, updateMatchPlayers, updateMatchScore } from '../../services/event-api';
 import { buildAndSharePoster, copyShareText, isActionSheetCancel } from '../../services/share-service';
 import { isOfflineMode } from '../../services/runtime-mode';
+import { completeEventShare, matchPosterRows } from '../../services/match-share';
 
 type DetailTab = 'INFO' | 'MATCHES' | 'RANKING';
 type MatchFilter = 'ALL' | 'PENDING' | 'LIVE' | 'FINISHED';
@@ -15,9 +16,9 @@ interface RoundPreview { roundNumber: number; matches: MatchPreview[]; completed
 interface EventDetailData {
   eventId: string; event?: ApiEventRecord; activeTab: DetailTab; formatLabel: string; registrationLabel: string; statusLabel: string;
   participants: ParticipantView[]; selectableParticipants: ParticipantView[]; participantNames: string[]; rankings: ApiRankingEntry[]; allMatches: MatchPreview[]; roundGroups: RoundPreview[];
-  loading: boolean; submitting: boolean; filterVisible: boolean; statusFilter: MatchFilter; selectedParticipantIds: string[]; filterCount: number; offlineMode: boolean;
+  loading: boolean; submitting: boolean; filterVisible: boolean; statusFilter: MatchFilter; selectedParticipantIds: string[]; filterCount: number; offlineMode: boolean; posterCanvasHeight: number;
   editorVisible: boolean; activeMatchId: string; activeMatch?: MatchPreview; scoreColumns: number[][]; scorePickerValue: number[];
-  lineupIndices: number[]; canAdjustPlayers: boolean; savingMatch: boolean; managingMatches: boolean; lineupSelectorVisible: boolean; activeLineupSlot: number;
+  lineupSlots: number[]; lineupIndices: number[]; canAdjustPlayers: boolean; savingMatch: boolean; managingMatches: boolean; lineupSelectorVisible: boolean; activeLineupSlot: number;
 }
 interface EventDetailMethods {
   noop(): void;
@@ -33,9 +34,9 @@ interface EventDetailMethods {
 Page<EventDetailData, EventDetailMethods>({
   data: {
     eventId: '', activeTab: 'INFO', formatLabel: '', registrationLabel: '', statusLabel: '', participants: [], selectableParticipants: [], participantNames: [],
-    rankings: [], allMatches: [], roundGroups: [], loading: true, submitting: false, offlineMode: false,
+    rankings: [], allMatches: [], roundGroups: [], loading: true, submitting: false, offlineMode: false, posterCanvasHeight: 880,
     filterVisible: false, statusFilter: 'ALL', selectedParticipantIds: [], filterCount: 0,
-    editorVisible: false, activeMatchId: '', scoreColumns: [[], []], scorePickerValue: [0, 0], lineupIndices: [], canAdjustPlayers: false, savingMatch: false, managingMatches: false, lineupSelectorVisible: false, activeLineupSlot: -1,
+    editorVisible: false, activeMatchId: '', scoreColumns: [[], []], scorePickerValue: [0, 0], lineupSlots: [], lineupIndices: [], canAdjustPlayers: false, savingMatch: false, managingMatches: false, lineupSelectorVisible: false, activeLineupSlot: -1,
   },
   onLoad(query) {
     if (!query.eventId) { void wx.showToast({ title: '缺少球局参数', icon: 'none' }); return; }
@@ -106,7 +107,7 @@ Page<EventDetailData, EventDetailMethods>({
     const match = this.data.allMatches.find((item) => item.id === String(event.currentTarget.dataset.id));
     const currentEvent = this.data.event;
     if (!match || !currentEvent) return;
-    const maximum = currentEvent.scoreTo === 31 ? 31 : 30;
+    const maximum = 31;
     const scores = Array.from({ length: maximum + 1 }, (_, index) => index);
     const untouched = (match.teamAScore ?? 0) === 0 && (match.teamBScore ?? 0) === 0;
     const scorePickerValue = untouched ? [0, 0] : [match.displayAScore, match.displayBScore];
@@ -114,7 +115,7 @@ Page<EventDetailData, EventDetailMethods>({
     const lineupIndices = orderedPlayers.map((player) => Math.max(0, this.data.selectableParticipants.findIndex((item) => item.id === player.participant.id)));
     this.setData({
       editorVisible: true, activeMatchId: match.id, activeMatch: match, scoreColumns: [scores, scores], scorePickerValue,
-      lineupIndices, canAdjustPlayers: match.status === 'SCHEDULED' && untouched,
+      lineupSlots: orderedPlayers.map((_, index) => index), lineupIndices, canAdjustPlayers: match.status === 'SCHEDULED' && untouched,
     });
   },
   closeMatchEditor() { if (!this.data.savingMatch && !this.data.lineupSelectorVisible) this.setData({ editorVisible: false, activeMatchId: '', activeMatch: undefined }); },
@@ -126,8 +127,13 @@ Page<EventDetailData, EventDetailMethods>({
   closeLineupSelector() { this.setData({ lineupSelectorVisible: false, activeLineupSlot: -1 }); },
   selectLineupPlayer(event) {
     const slot = this.data.activeLineupSlot; const participantIndex = Number(event.currentTarget.dataset.index);
-    if (slot < 0 || !this.data.selectableParticipants[participantIndex]) return;
-    const lineupIndices = [...this.data.lineupIndices]; lineupIndices[slot] = participantIndex;
+    if (!this.data.canAdjustPlayers || this.data.savingMatch || slot < 0 || slot >= this.data.lineupIndices.length || !this.data.selectableParticipants[participantIndex]) return;
+    const lineupIndices = [...this.data.lineupIndices];
+    // 选择本场另一位置的人员时交换两个位置，保持每场参赛人员唯一。
+    // 直接覆盖会产生重复人员，在线/离线保存都会被拒绝；交换也支持四人双打调整搭档。
+    const occupiedSlot = lineupIndices.indexOf(participantIndex);
+    if (occupiedSlot >= 0 && occupiedSlot !== slot) lineupIndices[occupiedSlot] = lineupIndices[slot]!;
+    lineupIndices[slot] = participantIndex;
     this.setData({ lineupIndices, lineupSelectorVisible: false, activeLineupSlot: -1 });
   },
   async saveScore() {
@@ -203,24 +209,27 @@ Page<EventDetailData, EventDetailMethods>({
     const lines = matchPosterLines(visibleMatches);
     const text = [`【${event.title}】`, `${this.data.formatLabel}｜${event.courtCount} 场地｜${event.rounds} 轮｜${event.scoreTo} 分制`, ...lines].join('\n');
     try {
-      const action = await wx.showActionSheet({ itemList: ['复制文字对阵', '生成并分享对阵图'] });
-      if (action.tapIndex === 0) await copyShareText(text);
-      else if (action.tapIndex === 1) await buildAndSharePoster({
+      const action = await wx.showActionSheet({ itemList: ['复制完整对阵（可导入）', '复制当前筛选对阵', '分享当前对阵图'] });
+      if (action.tapIndex === 0) {
+        const [latestEvent, allMatches] = await Promise.all([getEvent(event.id), listMatches(event.id, 'ALL')]);
+        await copyShareText(completeEventShare(latestEvent, allMatches));
+      } else if (action.tapIndex === 1) await copyShareText(text);
+      else if (action.tapIndex === 2) await buildAndSharePoster({
         page: this as unknown as WechatMiniprogram.Component.TrivialInstance, canvasId: 'matchesPoster', title: event.title,
         subtitle: `${this.data.formatLabel} · ${event.courtCount} 场地 · ${event.rounds} 轮 · ${event.scoreTo} 分制`,
-        lines, entrancePath: this.data.offlineMode ? undefined : `/pages/event-detail/index?eventId=${event.id}`,
+        lines, matchRows: matchPosterRows(visibleMatches), entrancePath: this.data.offlineMode ? undefined : `/pages/event-detail/index?eventId=${event.id}`,
       });
-    } catch (error) { if (!isActionSheetCancel(error)) void wx.showToast({ title: '对阵分享生成失败', icon: 'none' }); }
+    } catch (error) { if (!isActionSheetCancel(error)) void wx.showToast({ title: error instanceof Error ? error.message : '对阵分享生成失败', icon: 'none' }); }
   },
   async shareRankings() {
     const event = this.data.event; if (!event) return;
     const lines = rankingLines(this.data.rankings); const text = [`【${event.title}｜积分排名】`, ...lines].join('\n');
     try {
-      const action = await wx.showActionSheet({ itemList: ['复制文字排名', '生成并分享排名图'] });
+      const action = await wx.showActionSheet({ itemList: ['复制文字排名', '分享排名图'] });
       if (action.tapIndex === 0) await copyShareText(text);
       else if (action.tapIndex === 1) await buildAndSharePoster({
         page: this as unknown as WechatMiniprogram.Component.TrivialInstance, canvasId: 'rankingPoster', title: `${event.title} · 积分排名`,
-        subtitle: `${this.data.formatLabel} · 胜方加分 / 负方减分`, lines, entrancePath: this.data.offlineMode ? undefined : `/pages/event-detail/index?eventId=${event.id}`,
+        subtitle: `${this.data.formatLabel} · 胜方加分 / 负方减分`, lines, rankingRows: this.data.rankings, entrancePath: this.data.offlineMode ? undefined : `/pages/event-detail/index?eventId=${event.id}`,
       });
     } catch (error) { if (!isActionSheetCancel(error)) void wx.showToast({ title: '排名分享生成失败', icon: 'none' }); }
   },
@@ -254,14 +263,13 @@ function matchPosterLines(matches: readonly MatchPreview[]): string[] {
   const result: string[] = []; let round = 0;
   for (const match of matches) {
     if (match.roundNumber !== round) { round = match.roundNumber; result.push(`—— 第 ${round} 轮 ——`); }
-    result.push(`${match.courtNumber}号场  ${match.teamAName}  ${match.displayAScore}:${match.displayBScore}  ${match.teamBName}`);
+    result.push(`${match.courtNumber}号场 · ${match.statusLabel}`);
+    result.push(`A队：${match.teamAName}`);
+    result.push(`比分：${match.displayAScore} : ${match.displayBScore}`);
+    result.push(`B队：${match.teamBName}`);
+    result.push('');
   }
   return result;
 }
-
-
-
-
-
 
 

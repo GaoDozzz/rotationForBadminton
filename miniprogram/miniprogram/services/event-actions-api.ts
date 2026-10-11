@@ -1,5 +1,5 @@
 import { request } from './api-client';
-import { confirmOfflineWithdraw, previewOfflineWithdraw } from './offline-session';
+import { confirmOfflineWithdraw, previewOfflineWithdraw, startOfflineEvent } from './offline-session';
 import { isOfflineMode } from './runtime-mode';
 
 export interface WithdrawPreview {
@@ -9,7 +9,7 @@ export interface WithdrawPreview {
 }
 
 export function startEvent(eventId: string): Promise<unknown> {
-  if (isOfflineMode()) return Promise.reject(new Error('离线球局由组织者录入并直接开始'));
+  if (isOfflineMode()) return Promise.resolve(startOfflineEvent(eventId));
   return request({ path: `/events/${eventId}/start`, method: 'POST', body: {} });
 }
 export function previewWithdraw(eventId: string, participantId: string): Promise<WithdrawPreview> {

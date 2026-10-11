@@ -1,6 +1,7 @@
 <view class="page home" bindtap="closeActions">
   <view class="hero"><view class="brand-mark">转</view><view class="hero-copy"><view class="title">转转接龙</view><view class="subtitle">报名、轮转、计分，一场球清清楚楚</view></view></view>
   <button class="primary-button create-button" bindtap="createEvent">发起球局</button>
+  <button class="import-button" bindtap="importGame">导入球局</button>
   <view wx:if="{{offlineMode}}" class="mode-banner offline-mode-banner">
     <view><view class="mode-title">当前为离线模式</view><view class="mode-description">球局与草稿变更仅保留在本次使用期间；微信自主报名不可用。</view></view>
     <button class="mode-button reconnect" bindtap="restartAndReconnect">退出离线并重新连接</button>
@@ -28,9 +29,8 @@
     <view wx:for="{{drafts}}" wx:key="id" class="swipe-row"><view class="row-actions"><view class="edit-action" data-id="{{item.id}}" catchtap="editDraft">编辑</view><view class="delete-action" data-id="{{item.id}}" catchtap="removeDraft">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'draft-' + item.id ? 'opened' : ''}}" data-key="draft-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onDraftLongPress" bindtap="openDraft"><view class="card-top"><text class="status draft">草稿</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item.registrationMode === 'ORGANIZER_MANAGED' ? '组织者录入' : '微信报名'}} · {{item.rounds}} 轮</view></view></view>
   </view>
   <view wx:if="{{(activeCategory === 'ALL' || activeCategory === 'FINISHED') && finishedEvents.length}}" class="section"><view class="section-title">已结束的球局</view>
-    <view wx:for="{{finishedEvents}}" wx:key="id" class="swipe-row"><view class="row-actions single"><view class="delete-action" data-id="{{item.id}}" catchtap="removeEvent">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'event-' + item.id ? 'opened single' : ''}}" data-key="event-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onEventLongPress" bindtap="openEvent"><view class="card-top"><text class="status finished">已结束</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item._count.matches || 0}} 场</view></view></view>
+    <view wx:for="{{finishedEvents}}" wx:key="id" class="swipe-row"><view class="row-actions single"><view class="delete-action" data-id="{{item.id}}" catchtap="removeEvent">删除</view></view><view class="card list-card swipe-content {{openRowKey === 'event-' + item.id ? 'opened single' : ''}}" data-key="event-{{item.id}}" data-id="{{item.id}}" bindtouchstart="onRowTouchStart" bindtouchend="onRowTouchEnd" bindlongpress="onEventLongPress" bindtap="openEvent"><view class="card-top"><text class="status finished">{{item.status === 'CANCELLED' ? '已取消' : '已结束'}}</text><text class="arrow">›</text></view><view class="card-title">{{item.title}}</view><view class="card-meta">{{item.matchFormat === 'SINGLES' ? '单打' : item.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{item._count.matches || 0}} 场</view></view></view>
   </view>
   <view wx:if="{{!loading && events.length === 0 && drafts.length === 0}}" class="card empty-card"><view class="empty-title">还没有球局</view><view class="empty-description">创建一场单打、双打或混双自由转，邀请球友加入。</view></view>
   <view class="server-status {{serverStatus}}">服务状态：{{offlineMode ? '离线使用中（临时数据）' : serverStatus === 'online' ? '已连接' : serverStatus === 'checking' ? '检查中' : '未连接，请启动本地后台和数据库'}}</view>
 </view>
-

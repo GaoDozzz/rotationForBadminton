@@ -18,7 +18,7 @@ interface HomeMethods {
   removeEvent(event: WechatMiniprogram.TouchEvent): Promise<void>; onRowTouchStart(event: WechatMiniprogram.TouchEvent): void;
   onRowTouchEnd(event: WechatMiniprogram.TouchEvent): void; onDraftLongPress(event: WechatMiniprogram.TouchEvent): Promise<void>;
   onEventLongPress(event: WechatMiniprogram.TouchEvent): Promise<void>; closeActions(): void;
-  useOfflineMode(): void; restartAndReconnect(): Promise<void>;
+  useOfflineMode(): void; restartAndReconnect(): Promise<void>; importGame(): void;
 }
 
 let gesture: { x: number; y: number; key: string } | undefined;
@@ -41,10 +41,11 @@ Page<HomeData, HomeMethods>({
     finally { this.setData({ loading: false }); }
   },
   applyEventLists(events: ApiEventRecord[], offlineMode: boolean) {
-    this.setData({ events, inProgressEvents: events.filter((item) => item.status === 'IN_PROGRESS'), registrationEvents: events.filter((item) => ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'SCHEDULE_READY'].includes(item.status)), finishedEvents: events.filter((item) => item.status === 'FINISHED'), offlineMode });
+    this.setData({ events, inProgressEvents: events.filter((item) => item.status === 'IN_PROGRESS'), registrationEvents: events.filter((item) => ['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'SCHEDULE_READY'].includes(item.status)), finishedEvents: events.filter((item) => ['FINISHED', 'CANCELLED'].includes(item.status)), offlineMode });
   },
   async checkServer() { try { await request({ path: '/health/live' }); this.setData({ serverStatus: 'online' }); } catch { this.setData({ serverStatus: 'offline' }); } },
   createEvent() { if (this.data.drafts.length >= 3) void wx.showToast({ title: '草稿已满，仍可直接发起球局', icon: 'none' }); void wx.navigateTo({ url: '/pages/event-create/index' }); },
+  importGame() { void wx.navigateTo({ url: '/pages/event-import/index' }); },
   useOfflineMode() {
     beginOfflineSession(listPersistentDrafts()); enterOfflineMode();
     void wx.showToast({ title: '已进入离线模式', icon: 'success' }); void this.loadData();

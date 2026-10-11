@@ -3,6 +3,12 @@ import { RegistrationMode } from '../shared/contracts';
 import { request } from './api-client';
 import { createOfflineEvent, deleteOfflineEvent, getOfflineEvent, listOfflineEvents, listOfflineMatches, listOfflineRankings, regenerateOfflineMatches, updateOfflinePlayers, updateOfflineScore } from './offline-session';
 import { isOfflineMode } from './runtime-mode';
+import { importOfflineEvent } from './offline-session';
+import { formatEventTransfer, type EventTransfer } from '../shared/event-transfer';
+
+export async function importEvent(data: EventTransfer): Promise<ApiEventRecord> {
+  return isOfflineMode() ? importOfflineEvent(data) : request({ path: '/events/import', method: 'POST', body: { text: formatEventTransfer(data) } });
+}
 
 export function listEvents(): Promise<ApiEventRecord[]> { return isOfflineMode() ? Promise.resolve(listOfflineEvents()) : request({ path: '/events' }); }
 export function createEvent(draft: Omit<EventDraftRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiEventRecord> {
@@ -26,4 +32,3 @@ export function updateMatchScore(eventId: string, matchId: string, teamAScore: n
 export function updateMatchPlayers(eventId: string, matchId: string, teamAPlayerIds: string[], teamBPlayerIds: string[]): Promise<ApiMatchRecord> { return isOfflineMode() ? Promise.resolve(updateOfflinePlayers(eventId, matchId, teamAPlayerIds, teamBPlayerIds)) : request({ path: `/events/${eventId}/matches/${matchId}/players`, method: 'PUT', body: { teamAPlayerIds, teamBPlayerIds } }); }
 export function listRankings(eventId: string): Promise<ApiRankingEntry[]> { return isOfflineMode() ? Promise.resolve(listOfflineRankings(eventId)) : request({ path: `/events/${eventId}/rankings` }); }
 export function regenerateMatches(eventId: string): Promise<ApiEventRecord> { return isOfflineMode() ? Promise.resolve(regenerateOfflineMatches(eventId)) : request({ path: `/events/${eventId}/matches/regenerate`, method: 'POST' }); }
-

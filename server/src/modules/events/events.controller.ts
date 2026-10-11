@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Inject, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
-import { CreateEventDto, JoinEventDto, UpdateMatchPlayersDto, UpdateMatchScoreDto, WithdrawParticipantDto } from './event.dto';
+import { CreateEventDto, ImportEventDto, JoinEventDto, UpdateMatchPlayersDto, UpdateMatchScoreDto, WithdrawParticipantDto } from './event.dto';
 import { EventQueryService } from './event-query.service';
 import { EventsService } from './events.service';
 import { LocalDevelopmentGuard } from './local-development.guard';
@@ -13,6 +13,7 @@ export class EventsController {
 
   @Get() listMine() { return this.events.listMine(LOCAL_IDENTITY); }
   @Post() create(@Body() dto: CreateEventDto) { return this.events.create(LOCAL_IDENTITY, dto); }
+  @Post('import') importEvent(@Body() dto: ImportEventDto) { return this.events.importEvent(LOCAL_IDENTITY, dto.text); }
   @Get('share/:shareCode') getShared(@Param('shareCode') shareCode: string) { return this.events.getByShareCode(shareCode); }
   @Post('share/:shareCode/join') join(@Param('shareCode') shareCode: string, @Body() dto: JoinEventDto) { return this.events.join(shareCode, LOCAL_IDENTITY, dto); }
   @Get(':eventId') get(@Param('eventId') eventId: string) { return this.queries.get(eventId); }
@@ -26,5 +27,4 @@ export class EventsController {
   @Post(':eventId/withdraw/preview') previewWithdraw(@Param('eventId') eventId: string, @Body() dto: WithdrawParticipantDto) { return this.events.previewWithdraw(eventId, dto.participantId, LOCAL_IDENTITY); }
   @Post(':eventId/withdraw/confirm') confirmWithdraw(@Param('eventId') eventId: string, @Body() dto: WithdrawParticipantDto) { return this.events.confirmWithdraw(eventId, dto.participantId, LOCAL_IDENTITY); }
 }
-
 

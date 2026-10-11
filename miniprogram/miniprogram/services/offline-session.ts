@@ -1,5 +1,6 @@
 import { Gender, MatchFormat, RegistrationMode } from '../shared/contracts';
 import type { ApiEventRecord, ApiMatchPlayer, ApiMatchRecord, ApiParticipant, ApiRankingEntry, EventDraftInput, EventDraftRecord } from '../shared/models';
+import { validateEventTransfer, type EventTransfer } from '../shared/event-transfer';
 
 interface OfflineEvent extends ApiEventRecord { participants: ApiParticipant[]; matches: ApiMatchRecord[]; }
 interface PlayerStats { plays: number; lastRound: number; streak: number; }
@@ -52,6 +53,33 @@ export function createOfflineEvent(draft: EventDraftInput): ApiEventRecord {
 }
 
 export function getOfflineEvent(eventId: string): ApiEventRecord { return publicEvent(requireEvent(eventId)); }
+/** 导入保留原场次，不调用排阵算法；新建所有 ID，确保导入副本与来源球局独立。 */
+export function importOfflineEvent(data: EventTransfer): ApiEventRecord {
+  validateEventTransfer(data);
+  if (listOfflineEvents().some((event) => event.title.trim() === data.title.trim())) throw new Error('球局名称已存在，请使用新名称导入');
+  const now = new Date().toISOString();
+  const participants: ApiParticipant[] = data.participants.map((p) => ({ ...p, gender: p.gender as Gender, id: localId('offline-player') }));
+  const ids = new Map(participants.map((p) => [p.participantNumber, p]));
+  const record: OfflineEvent = {
+    id: localId('offline-event'), title: data.title.trim(), description: data.description, shareCode: '',
+    matchFormat: data.matchFormat as MatchFormat, registrationMode: RegistrationMode.OrganizerManaged,
+    status: data.status, capacity: data.capacity ?? participants.length, courtCount: data.courtCount, rounds: data.rounds,
+    scoreTo: data.scoreTo, participants, createdAt: now, updatedAt: now,
+    matches: data.matches.map((m) => ({
+      id: localId('offline-match'), roundNumber: m.roundNumber, courtNumber: m.courtNumber,
+      status: m.status, teamAScore: m.teamAScore, teamBScore: m.teamBScore,
+      players: makeMatchPlayers([...m.teamA, ...m.teamB].map((number) => ids.get(number)!), m.teamA.length),
+    })),
+  };
+  offlineEvents.set(record.id, record); return publicEvent(record);
+}
+export function startOfflineEvent(eventId: string): ApiEventRecord {
+  const event = requireEvent(eventId);
+  if (!['REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'SCHEDULE_READY'].includes(event.status)) throw new Error('当前球局状态不能开始');
+  // 导入已有对阵时直接沿用，不覆盖原安排；没有对阵时才生成。
+  const matches = event.matches.length ? event.matches : generateSchedule(event, []);
+  event.matches = matches; event.status = 'IN_PROGRESS'; return publicEvent(event);
+}
 export function deleteOfflineEvent(eventId: string): { deleted: boolean } { return { deleted: offlineEvents.delete(eventId) }; }
 
 export function listOfflineMatches(eventId: string, filter: 'ALL' | 'PENDING' | 'LIVE' | 'FINISHED'): ApiMatchRecord[] {
@@ -65,9 +93,17 @@ export function listOfflineMatches(eventId: string, filter: 'ALL' | 'PENDING' | 
 export function updateOfflineScore(eventId: string, matchId: string, teamAScore: number, teamBScore: number): ApiMatchRecord {
   const event = requireEvent(eventId); const match = requireMatch(event, matchId);
   validateScoreRange(event.scoreTo, teamAScore, teamBScore);
+  const winnerScore = Math.max(teamAScore, teamBScore);
+  const completed = validateFinalScore(event.scoreTo, teamAScore, teamBScore);
+  const looksFinished = event.scoreTo === 31 ? winnerScore === 31
+    : winnerScore >= event.scoreTo && (Math.abs(teamAScore - teamBScore) >= 2 || winnerScore === 31);
+  // 和在线校验一致：已触及终局条件的非法比分不能被保存为“比赛中”。
+  // 在写入分数之前检查，失败时保留原比分、状态和积分。
+  if (looksFinished && !completed) throw new Error('比分不符合当前分制的终局规则');
   match.teamAScore = teamAScore; match.teamBScore = teamBScore;
   if (teamAScore === 0 && teamBScore === 0) match.status = 'SCHEDULED';
-  else match.status = validateFinalScore(event.scoreTo, teamAScore, teamBScore) ? 'COMPLETED' : 'IN_PROGRESS';
+  else match.status = completed ? 'COMPLETED' : 'IN_PROGRESS';
+  if (event.status === 'IN_PROGRESS' || event.status === 'FINISHED') event.status = event.matches.every((m) => ['COMPLETED', 'WALKOVER', 'CANCELLED'].includes(m.status)) ? 'FINISHED' : 'IN_PROGRESS';
   event.updatedAt = new Date().toISOString(); return clone(match);
 }
 
@@ -84,7 +120,7 @@ export function updateOfflinePlayers(eventId: string, matchId: string, teamAPlay
 
 export function listOfflineRankings(eventId: string): ApiRankingEntry[] {
   const event = requireEvent(eventId);
-  const rows = new Map(event.participants.map((participant) => [participant.id, {
+  const rows = new Map(event.participants.filter((p) => p.status !== 'WAITLISTED').map((participant) => [participant.id, {
     participantId: participant.id, rank: 0, points: 0, wins: 0, losses: 0, scored: 0, conceded: 0, matchesPlayed: 0, participant: clone(participant),
   }]));
   for (const match of event.matches.filter((item) => ['COMPLETED', 'WALKOVER'].includes(item.status))) {
@@ -123,7 +159,7 @@ export function confirmOfflineWithdraw(eventId: string, participantId: string): 
 }
 
 function generateSchedule(event: OfflineEvent, lockedMatches: readonly ApiMatchRecord[]): ApiMatchRecord[] {
-  const active = event.participants.filter((item) => item.status !== 'WITHDRAWN'); assertEnoughPlayers(event.matchFormat, active);
+  const active = event.participants.filter((item) => item.status === 'ACTIVE'); assertEnoughPlayers(event.matchFormat, active);
   const playersPerMatch = event.matchFormat === MatchFormat.Singles ? 2 : 4;
   const maximumCourts = event.matchFormat === MatchFormat.MixedDoubles
     ? Math.floor(Math.min(active.filter((item) => item.gender === Gender.Male).length, active.filter((item) => item.gender === Gender.Female).length) / 2)
@@ -260,15 +296,15 @@ function tieCost(players: ApiParticipant[], round: number, court: number): numbe
 function seeded(value: string, round: number, court: number): number { let hash = round * 131 + court * 17; for (let index = 0; index < value.length; index += 1) hash = (hash * 33 + value.charCodeAt(index)) >>> 0; return hash % 100000; }
 
 function validateScoreRange(scoreTo: number, a: number, b: number): void {
-  const maximum = scoreTo === 31 ? 31 : 30;
+  const maximum = 31;
   if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a > maximum || b > maximum) throw new Error(`比分必须是 0～${maximum} 的整数`);
 }
 function validateFinalScore(scoreTo: number, a: number, b: number): boolean {
   if (a === b) return false; const winner = Math.max(a, b); const loser = Math.min(a, b);
   if (scoreTo === 31) return winner === 31 && loser < 31;
-  if (winner > 30 || loser >= 30) return false;
+  if (winner > 31 || loser >= 31) return false;
   if (loser <= scoreTo - 2) return winner === scoreTo;
-  if (winner < 30) return winner - loser === 2;
+  if (winner < 31) return winner - loser === 2;
   return winner - loser === 1 || winner - loser === 2;
 }
 function assertEnoughPlayers(format: MatchFormat, players: readonly ApiParticipant[]): void {

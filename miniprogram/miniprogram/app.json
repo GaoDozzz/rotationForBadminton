@@ -2,6 +2,7 @@
   "pages": [
     "pages/home/index",
     "pages/event-create/index",
+    "pages/event-import/index",
     "pages/draft-detail/index",
     "pages/event-detail/index",
     "pages/registration/index",

@@ -1,0 +1,17 @@
+<view class="page import-page">
+  <view class="card">
+    <view class="heading">粘贴完整对阵信息</view>
+    <view class="hint">使用“分享 → 复制完整对阵（可导入）”生成的文字，可保留全部名单、对阵和比分。</view>
+    <textarea class="transfer-text" maxlength="180000" placeholder="在此粘贴完整对阵文字" value="{{text}}" bindinput="onTextInput" disabled="{{submitting}}" />
+    <view class="actions"><button class="secondary-button" bindtap="pasteText" disabled="{{submitting}}">粘贴文字</button><button class="primary-button" bindtap="previewImport" disabled="{{submitting || !text}}">预览导入</button></view>
+  </view>
+  <view wx:if="{{preview}}" class="card preview-card">
+    <view class="heading">导入预览</view>
+    <view class="label">球局名称</view><input maxlength="40" class="title-input" value="{{title}}" bindinput="onTitleInput" disabled="{{submitting}}" />
+    <view class="summary">{{summary}}</view>
+    <view class="hint">比赛形式：{{preview.matchFormat === 'SINGLES' ? '单打' : preview.matchFormat === 'MIXED_DOUBLES' ? '双打混双' : '双打'}} · {{preview.courtCount}} 块场地</view>
+    <view class="roster"><text wx:for="{{preview.participants}}" wx:key="participantNumber">{{item.participantNumber}} · {{item.nickname}}{{item.status === 'WITHDRAWN' ? '（已退出）' : ''}}　</text></view>
+    <view class="hint">{{offlineMode ? '离线导入仅在本次使用期间保留。' : '在线导入将保存为你管理的新球局。'}}积分根据导入的已结束比分重新计算。</view>
+    <button class="primary-button confirm" loading="{{submitting}}" disabled="{{submitting}}" bindtap="confirmImport">确认导入</button>
+  </view>
+</view>

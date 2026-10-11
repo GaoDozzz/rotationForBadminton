@@ -3,6 +3,7 @@ export enum MatchFormat {
   Doubles = 'DOUBLES',
   MixedDoubles = 'MIXED_DOUBLES',
 }
+export * from './event-transfer';
 
 export enum PlayMode {
   FreeRotation = 'FREE_ROTATION',
@@ -77,5 +78,4 @@ export function getMatchShape(format: MatchFormat): { teamSize: 1 | 2; playersPe
     ? { teamSize: 1, playersPerMatch: 2 }
     : { teamSize: 2, playersPerMatch: 4 };
 }
-
 
